@@ -1,5 +1,6 @@
 import { handleMcpRequest } from "./server";
 import { mcpHttpConfigFromEnv } from "../../core/config";
+import { loadEnvFile } from "../../core/env";
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -35,9 +36,6 @@ type Buffer = {
 };
 
 const http = require("node:http");
-
-const config = mcpHttpConfigFromEnv();
-const { host, port } = config;
 
 function headerValue(req: HttpRequest, name: string): string | undefined {
   const value = req.headers?.[name.toLowerCase()];
@@ -137,6 +135,8 @@ export async function handleHttpRequest(req: HttpRequest, res: HttpResponse): Pr
 }
 
 export function startMcpHttpServer(): void {
+  loadEnvFile();
+  const { host, port } = mcpHttpConfigFromEnv();
   const server = http.createServer((req, res) => {
     void handleHttpRequest(req, res);
   });

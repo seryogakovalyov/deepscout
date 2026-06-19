@@ -20,12 +20,11 @@ export interface McpHttpConfig {
 
 export type RuntimeConfig = SearchConfig;
 
-const SEARCH_DEFAULTS: Omit<SearchConfig, "embeddingsUrl"> = {
+const SEARCH_DEFAULTS: Omit<SearchConfig, "embeddingsUrl" | "searchWindow"> = {
   maxResults: 8,
   maxPages: 3,
   timeoutMs: 8000,
   locale: "en-us",
-  searchWindow: "y",
 };
 
 const SEARCH_TIME_MAP: Record<string, SearchTimeWindow> = {
@@ -60,7 +59,7 @@ export function searchConfigFromEnv(overrides?: Partial<SearchConfig>): SearchCo
     locale: env.SEARCH_LANGUAGE ?? overrides?.locale ?? SEARCH_DEFAULTS.locale,
     searxngUrl: env.SEARXNG_URL ?? overrides?.searxngUrl,
     embeddingsUrl: env.EMBEDDINGS_BASE_URL ?? overrides?.embeddingsUrl,
-    searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow ?? SEARCH_DEFAULTS.searchWindow,
+    searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow,
   };
 }
 

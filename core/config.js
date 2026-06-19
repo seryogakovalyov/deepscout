@@ -7,7 +7,6 @@ const SEARCH_DEFAULTS = {
     maxPages: 3,
     timeoutMs: 8000,
     locale: "en-us",
-    searchWindow: "y",
 };
 const SEARCH_TIME_MAP = {
     day: "d",
@@ -39,7 +38,7 @@ function searchConfigFromEnv(overrides) {
         locale: env.SEARCH_LANGUAGE ?? overrides?.locale ?? SEARCH_DEFAULTS.locale,
         searxngUrl: env.SEARXNG_URL ?? overrides?.searxngUrl,
         embeddingsUrl: env.EMBEDDINGS_BASE_URL ?? overrides?.embeddingsUrl,
-        searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow ?? SEARCH_DEFAULTS.searchWindow,
+        searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow,
     };
 }
 function mcpHttpConfigFromEnv(overrides) {

@@ -53,10 +53,10 @@ function detectAmbiguitySignals(question: string): string[] {
 }
 
 export function createToolHandlers(config: SearchConfig): ToolHandlers {
-  const ddg = (query: string, max: number, time?: SearchTimeWindow, signal?: AbortSignal) =>
-    ddgSearch(query, max, time ?? config.searchWindow, config.locale, config.searxngUrl, signal);
-  const sar = (query: string, max: number, pages: number, time?: SearchTimeWindow, dedup?: Set<string>, signal?: AbortSignal) =>
-    searchAndRead(query, max, pages, config.timeoutMs, time ?? config.searchWindow, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal);
+  const ddg = (query: string, max: number, time?: SearchTimeWindow, signal?: AbortSignal, status?: (text: string) => void) =>
+    ddgSearch(query, max, time, config.locale, config.searxngUrl, signal, status);
+  const sar = (query: string, max: number, pages: number, time?: SearchTimeWindow, dedup?: Set<string>, signal?: AbortSignal, status?: (text: string) => void) =>
+    searchAndRead(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status);
 
   return {
     clarify: async ({ question }, ctx) => {
@@ -85,7 +85,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
     search: async ({ query, max_pages_to_read }, ctx) => {
       ctx.status(`Searching: ${query}`);
-      const { hits, pages } = await sar(query, config.maxResults, max_pages_to_read, undefined, undefined, ctx.signal);
+      const { hits, pages } = await sar(query, config.maxResults, max_pages_to_read, undefined, undefined, ctx.signal, ctx.status);
 
       const pageDetails = pages.map((p) => ({
         url: p.url,
@@ -155,7 +155,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
       for (const [i, angle] of searchAngles.entries()) {
         ctx.status(`Angle ${i + 1}/${searchAngles.length}: ${angle}`);
         const query = angles.length > 0 ? `${topic} ${angle}` : angle;
-        const { hits, pages } = await sar(query, config.maxResults, pages_per_angle, undefined, fetchedUrls, ctx.signal);
+        const { hits, pages } = await sar(query, config.maxResults, pages_per_angle, undefined, fetchedUrls, ctx.signal, ctx.status);
         results.push({
           angle,
           query,
@@ -203,7 +203,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
       for (const [i, s] of searches.entries()) {
         ctx.status(`Checking angle ${i + 1}/4: ${s.angle}`);
-        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal);
+        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal, ctx.status);
         angleResults.push({
           angle: s.angle,
           hits: hits.map((h) => ({ title: h.title, url: h.url, snippet: h.snippet })),
@@ -256,7 +256,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
       for (const [i, s] of searches.entries()) {
         ctx.status(`Verifying angle ${i + 1}/4: ${s.angle}`);
-        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal);
+        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal, ctx.status);
         results.push({
           angle: s.angle,
           hits: hits.map((h) => ({
@@ -306,7 +306,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
       for (const [i, s] of searches.entries()) {
         ctx.status(`Source angle ${i + 1}/4: ${s.angle}`);
-        const { hits, pages } = await sar(s.query, config.maxResults, 1, undefined, undefined, ctx.signal);
+        const { hits, pages } = await sar(s.query, config.maxResults, 1, undefined, undefined, ctx.signal, ctx.status);
         results.push({
           angle: s.angle,
           hits: hits.map((h) => ({
@@ -343,7 +343,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
     search_recent: async ({ query, window, read_pages }, ctx) => {
       ctx.status(`Searching (last ${window}): ${query}`);
       const timeMap = { day: "d", week: "w", month: "m", year: "y" } as const;
-      const { hits, pages } = await sar(query, config.maxResults, read_pages, timeMap[window], undefined, ctx.signal);
+      const { hits, pages } = await sar(query, config.maxResults, read_pages, timeMap[window], undefined, ctx.signal, ctx.status);
 
       const successUrls = pages.filter((p) => !p.error).map((p) => p.url);
 
@@ -374,7 +374,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
       let targetUrls: string[] = urls;
 
       if (targetUrls.length === 0) {
-        const hits = await ddg(topic, num_sources * 2, undefined, ctx.signal);
+        const hits = await ddg(topic, num_sources * 2, undefined, ctx.signal, ctx.status);
         // Pick sources with varied domains for diversity
         const seen = new Set<string>();
         for (const h of hits) {
@@ -441,7 +441,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
       for (const [i, s] of searches.entries()) {
         ctx.status(`Expert angle ${i + 1}/4: ${s.angle}`);
-        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal);
+        const { hits, pages } = await sar(s.query, config.maxResults, Math.min(config.maxPages, 2), undefined, undefined, ctx.signal, ctx.status);
         results.push({
           angle: s.angle,
           hits: hits.map((h) => ({
@@ -491,7 +491,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
       const allHits: SearchHit[] = [];
 
       for (const q of queries) {
-        const hits = await ddg(q, config.maxResults, undefined, ctx.signal);
+        const hits = await ddg(q, config.maxResults, undefined, ctx.signal, ctx.status);
         allHits.push(...hits);
         await sleep(400);
       }
@@ -580,7 +580,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
 
       for (const [i, angle] of angles.entries()) {
         ctx.status(`Research angle ${i + 1}/${angles.length}: ${angle.slice(0, 60)}`);
-        const { hits, pages } = await sar(angle, config.maxResults, ppa, undefined, fetchedUrls, ctx.signal);
+        const { hits, pages } = await sar(angle, config.maxResults, ppa, undefined, fetchedUrls, ctx.signal, ctx.status);
         sections.push({
           angle,
           pages: pages.map((p) => ({
@@ -633,7 +633,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
       const seenUrls = new Set<string>();
 
       for (const q of queries) {
-        const hits = await ddg(q, config.maxResults, time, ctx.signal);
+        const hits = await ddg(q, config.maxResults, time, ctx.signal, ctx.status);
         for (const h of hits) {
           if (!seenUrls.has(h.url)) { seenUrls.add(h.url); allHits.push(h); }
         }
@@ -703,7 +703,7 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
       const repResults: Array<{ query: string; hits: Array<{ title: string; url: string; snippet: string }> }> = [];
 
       for (const q of reputationSearches) {
-        const hits = await ddg(q, 5, undefined, ctx.signal);
+        const hits = await ddg(q, 5, undefined, ctx.signal, ctx.status);
         repResults.push({
           query: q,
           hits: hits.map((h) => ({ title: h.title, url: h.url, snippet: h.snippet })),

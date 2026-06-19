@@ -1,7 +1,10 @@
-import type { SearchTimeWindow } from "../core/config";
-import { searchConfigFromEnv, mcpHttpConfigFromEnv } from "../core/config";
-
+const { loadEnvFile } = require("../core/env");
 const { ddgSearch } = require("../core/search");
+const { searchConfigFromEnv, mcpHttpConfigFromEnv } = require("../core/config");
+
+type SearchTimeWindow = "d" | "w" | "m" | "y";
+
+loadEnvFile();
 
 const config = searchConfigFromEnv();
 const diagQuery = process.env.SEARCH_DIAG_QUERY;
@@ -17,8 +20,8 @@ const timeWindow = config.searchWindow;
 
 function parseTimeWindow(value: string | undefined): SearchTimeWindow | undefined {
   const map: Record<string, SearchTimeWindow> = { day: "d", week: "w", month: "m", year: "y" };
-  if (!value) return "y";
-  return map[value.trim().toLowerCase()] ?? "y";
+  if (!value) return undefined;
+  return map[value.trim().toLowerCase()];
 }
 
 function selectedProvider(): string {

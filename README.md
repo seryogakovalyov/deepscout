@@ -253,7 +253,7 @@ Returns: `url`, `domain`, `credibility_assessment`, `about_page`, `reputation_se
 | `MAX_PAGES_PER_SEARCH` | `3` | Pages fetched and read per search |
 | `FETCH_TIMEOUT_MS` | `8000` | Per-page fetch timeout (ms) |
 | `SEARCH_LANGUAGE` | `"en-us"` | Locale/language for results |
-| `SEARCH_RECENCY_WINDOW` | `"year"` | Default time filter: `day` / `week` / `month` / `year` |
+| `SEARCH_RECENCY_WINDOW` | — | Optional global time filter: `day` / `week` / `month` / `year`. Leave empty for general search; `search_recent` passes an explicit window. |
 | `SEARXNG_URL` | — | Self-hosted SearXNG instance (recommended) |
 | `EMBEDDINGS_BASE_URL` | `http://localhost:8000` | Embeddings model for semantic reranking |
 | `MCP_HTTP_HOST` | `"127.0.0.1"` | MCP HTTP server bind address |

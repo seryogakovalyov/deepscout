@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { exportTools, executeToolCall } = require("../providers/openai");
+const { createRuntimeConfig } = require("../providers/shared/runtimeConfig");
 
 function getTool(name) {
   const tool = exportTools().find((item) => item.function.name === name);
@@ -109,4 +110,16 @@ test("executeToolCall returns cancelled when signal is already aborted", async (
   assert.equal(parsed.tool_error, true);
   assert.equal(parsed.tool, "clarify");
   assert.equal(parsed.error, "cancelled");
+});
+
+test("createRuntimeConfig reads search provider settings from env", () => {
+  const previous = process.env.SEARXNG_URL;
+  process.env.SEARXNG_URL = "http://localhost:8080";
+  try {
+    const config = createRuntimeConfig();
+    assert.equal(config.searxngUrl, "http://localhost:8080");
+  } finally {
+    if (previous === undefined) delete process.env.SEARXNG_URL;
+    else process.env.SEARXNG_URL = previous;
+  }
 });
