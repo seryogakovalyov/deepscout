@@ -266,42 +266,42 @@ See `.env.example` for a ready-to-copy template.
 ## Architecture
 
 ```
-              MCP Clients              OpenAI
-            (LM Studio, Claude)       Compatible
-                  │                      │
-    ┌─────────────┼──────────────┐       │
-    │             │              │       │
-┌───┴────┐   ┌───┴────┐   ┌────┴─────┐ │
-│ Stdio  │   │ HTTP   │   │ ToolLoop │◄┘
-│ Server │   │ :8787  │   │ (OpenAI  │
-│        │   │        │   │ Adapter) │
-└────┬───┘   └────┬───┘   └────┬────┘
-     │             │             │
-     └─────────────┴─────────────┘
-              │
-      executeToolCall()
-      (provider-agnostic)
-              │
-    ┌─────────┼─────────┐
-    │         │         │
-┌───┴────┐ ┌─┴──────┐ ┌┴──────────┐
-│  14     │ │ Config │ │ Core      │
-│ Tools   │ │ & Env  │ │ Engines   │
-│Handlers │ │        │ │           │
-└────────┘ └────────┘ └┴───────────┘
-                               │
-                    ┌──────────┼──────────┐
-                    │          │          │
-              ┌─────┴───┐ ┌───┴────┐ ┌───┴─────┐
-              │Credibility│ │Rerank│ │Search   │
-              │Assessment │ │(emb.)│ │Backends │
-              └──────────┘ └──────┘ └─────────┘
-                                          │
-                              ┌───────────┼───────────┐
-                              │           │           │
-                        ┌─────┴────┐ ┌───┴───┐ ┌──┴────┐
-                        │ SearXNG  │ │ DDG  │ │ Bing │
-                        └──────────┘ └───────┘ └──────┘
+                    MCP Clients               OpenAI
+                  (LM Studio, Claude)        Compatible
+                        │                        │
+          ┌─────────────┼─────────────┐          │
+          │             │             │          │
+     ┌────┴────┐   ┌────┴────┐  ┌─────┴─────┐    │
+     │  Stdio  │   │  HTTP   │  │  ToolLoop │    │
+     │  Server │   │ :8787   │  │  (OpenAI  │◄───┘
+     │         │   │         │  │  Adapter) │
+     └────┬────┘   └────┬────┘  └────┬──────┘
+          │             │            │
+          └─────────────┴────────────┘
+                        │
+              executeToolCall()
+             (provider-agnostic)
+                        │
+              ┌─────────┼───────────┐
+              │         │           │
+         ┌────┴────┐ ┌──┴───┐ ┌─────┴──────┐
+         │   14    │ │Config│ │   Core     │
+         │  Tools  │ │& Env │ │  Engines   │
+         │Handlers │ │      │ │            │
+         └─────────┘ └──────┘ └─────┬──────┘
+                                    │
+                       ┌────────────┼────────────┐
+                       │            │            │
+                  ┌────┴─────┐ ┌────┴───┐ ┌──────┴────┐
+                  │Credibili │ │ Rerank │ │  Search   │
+                  │Assessment│ │ (emb.) │ │ Backends  │
+                  └──────────┘ └────────┘ └────┬──────┘
+                                               │
+                                   ┌───────────┼────────┐
+                                   │           │        │   
+                              ┌────┴────┐ ┌────┴──┐ ┌───┴───┐
+                              │ SearXNG │ │  DDG  │ │ Bing  │
+                              └─────────┘ └───────┘ └───────┘
 ```
 
 ### Key design decisions
@@ -352,15 +352,15 @@ npm run smoke:llamacpp
 
 | Query type | Command flow |
 |---|---|
-| Simple fact | `clarify` (READY) → `search("Dunning-Kruger effect")` |
-| Ambiguous query | `clarify("python")` (CLARIFY) → `search("Python 3.13 release notes")` |
-| Verify a claim | `clarify` (READY) → `fact_check("humans use only 10% of brains")` |
-| Verify a stat | `verify_statistic("90% of startups fail in year one", "venture-backed US tech")` |
-| Recent news | `search_recent("GPT-5", window: "week")` |
-| Compare sources | `compare_sources("seed oils health", num_sources: 3)` |
-| Academic research | `search_academic("quantum error correction", source: "arxiv", year_from: 2020)` |
-| Deep research | `research_topic("quantum error correction", depth: "comprehensive")` |
-| Check source | `check_source("naturalhealth365.com")` |
+| Simple fact | `clarify` (READY) → `search("What is the Dunning-Kruger effect?")` |
+| Ambiguous query | `clarify("Tell me about python")` (CLARIFY) → `search("What is Python 3.13?")` |
+| Verify a claim | `clarify` (READY) → `fact_check("Humans only use 10% of their brains")` |
+| Verify a statistic | `clarify` (READY) → `verify_statistic("50,000 species go extinct per year", "global biodiversity")` |
+| Recent news | `clarify` (READY) → `search_recent("What has happened with GPT-5 this week?", window: "week")` |
+| Compare sources | `clarify` (READY) → `compare_sources("Are seed oils bad for your health?", num_sources: 4)` |
+| Academic research | `clarify` (READY) → `search_academic("Does quantum error correction work in practice?", source: "arxiv", year_from: 2022)` |
+| Deep research | `clarify` (READY) → `research_topic("Give me a thorough research brief on intermittent fasting", depth: "comprehensive")` |
+| Check source | `clarify` (READY) → `check_source("naturalhealth365.com")` |
 
 ---
 
