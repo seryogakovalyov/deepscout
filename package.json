@@ -1,0 +1,32 @@
+{
+  "name": "deepscout",
+  "version": "1.0.0",
+  "description": "Fact-grounded web search with source verification, multi-angle research, and reasoning",
+  "main": "providers/openai/index.js",
+  "scripts": {
+    "build": "npx tsc",
+    "diag:search": "npm run build && node examples/search-provider-diagnostics.ts",
+    "mcp:http": "npm run build && node providers/mcp/httpServer.js",
+    "mcp:stdio": "npm run build && node providers/mcp/server.js",
+    "smoke:llamacpp": "npm run build && node examples/llamacpp-smoke-test.ts",
+    "test": "npm run build && node --test test/*.test.js",
+    "watch": "npx tsc --watch"
+  },
+  "keywords": [
+    "web-search",
+    "fact-check",
+    "research",
+    "source-verification",
+    "deep-search",
+    "news",
+    "academic"
+  ],
+  "author": "Sergey Kovalyov <seryogakovalyov@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
