@@ -5,10 +5,10 @@
   "main": "providers/openai/index.js",
   "scripts": {
     "build": "npx tsc",
-    "diag:search": "npm run build && node examples/search-provider-diagnostics.ts",
-    "mcp:http": "npm run build && node providers/mcp/httpServer.js",
-    "mcp:stdio": "npm run build && node providers/mcp/server.js",
-    "smoke:llamacpp": "npm run build && node examples/llamacpp-smoke-test.ts",
+    "diag:search": "npm run build && node --env-file-if-exists=.env examples/search-provider-diagnostics.ts",
+    "mcp:http": "npm run build && node --env-file-if-exists=.env providers/mcp/httpServer.js",
+    "mcp:stdio": "npm run build && node --env-file-if-exists=.env providers/mcp/server.js",
+    "smoke:llamacpp": "npm run build && node --env-file-if-exists=.env examples/llamacpp-smoke-test.ts",
     "test": "npm run build && node --test test/*.test.js",
     "watch": "npx tsc --watch"
   },

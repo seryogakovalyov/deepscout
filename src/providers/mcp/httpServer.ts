@@ -1,6 +1,5 @@
 import { handleMcpRequest } from "./server";
 import { mcpHttpConfigFromEnv } from "../../core/config";
-import { loadEnvFile } from "../../core/env";
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -135,7 +134,6 @@ export async function handleHttpRequest(req: HttpRequest, res: HttpResponse): Pr
 }
 
 export function startMcpHttpServer(): void {
-  loadEnvFile();
   const { host, port } = mcpHttpConfigFromEnv();
   const server = http.createServer((req, res) => {
     void handleHttpRequest(req, res);

@@ -4,7 +4,6 @@ exports.handleHttpRequest = handleHttpRequest;
 exports.startMcpHttpServer = startMcpHttpServer;
 const server_1 = require("./server");
 const config_1 = require("../../core/config");
-const env_1 = require("../../core/env");
 const http = require("node:http");
 function headerValue(req, name) {
     const value = req.headers?.[name.toLowerCase()];
@@ -95,7 +94,6 @@ async function handleHttpRequest(req, res) {
     }
 }
 function startMcpHttpServer() {
-    (0, env_1.loadEnvFile)();
     const { host, port } = (0, config_1.mcpHttpConfigFromEnv)();
     const server = http.createServer((req, res) => {
         void handleHttpRequest(req, res);

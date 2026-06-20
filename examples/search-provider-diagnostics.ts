@@ -1,10 +1,7 @@
-const { loadEnvFile } = require("../core/env");
 const { ddgSearch } = require("../core/search");
 const { searchConfigFromEnv, mcpHttpConfigFromEnv } = require("../core/config");
 
 type SearchTimeWindow = "d" | "w" | "m" | "y";
-
-loadEnvFile();
 
 const config = searchConfigFromEnv();
 const diagQuery = process.env.SEARCH_DIAG_QUERY;

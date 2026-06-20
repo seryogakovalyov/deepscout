@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runtimeConfigFromEnv = runtimeConfigFromEnv;
 exports.exportMcpTools = exportMcpTools;
 exports.handleMcpRequest = handleMcpRequest;
-const env_1 = require("../../core/env");
 const openai_1 = require("../openai");
 const SERVER_INFO = {
     name: "web-search",
@@ -136,6 +135,5 @@ function startStdioServer() {
     });
 }
 if (require.main === module) {
-    (0, env_1.loadEnvFile)();
     startStdioServer();
 }

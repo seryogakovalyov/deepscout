@@ -1,5 +1,4 @@
 import type { SearchConfig, SearchTimeWindow } from "../../core/config";
-import { loadEnvFile } from "../../core/env";
 import { executeToolCall, exportTools } from "../openai";
 
 declare const process: {
@@ -195,6 +194,5 @@ function startStdioServer(): void {
 }
 
 if (require.main === module) {
-  loadEnvFile();
   startStdioServer();
 }
