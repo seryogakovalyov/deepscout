@@ -45,8 +45,13 @@ function detectAmbiguitySignals(question) {
     return signals;
 }
 function createToolHandlers(config) {
-    const ddg = (query, max, time, signal, status) => (0, search_1.ddgSearch)(query, max, time, config.locale, config.searxngUrl, signal, status);
-    const sar = (query, max, pages, time, dedup, signal, status) => (0, search_1.searchAndRead)(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status);
+    const searxngRetry = {
+        attempts: config.searxngRetryAttempts,
+        delayMs: config.searxngRetryDelayMs,
+        backoffMultiplier: config.searxngRetryBackoffMultiplier,
+    };
+    const ddg = (query, max, time, signal, status) => (0, search_1.ddgSearch)(query, max, time, config.locale, config.searxngUrl, signal, status, searxngRetry);
+    const sar = (query, max, pages, time, dedup, signal, status) => (0, search_1.searchAndRead)(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry);
     return {
         clarify: async ({ question }, ctx) => {
             ctx.status("Analysing query…");

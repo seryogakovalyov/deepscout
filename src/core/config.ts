@@ -9,6 +9,9 @@ export interface SearchConfig {
   timeoutMs: number;
   locale: string;
   searxngUrl?: string;
+  searxngRetryAttempts: number;
+  searxngRetryDelayMs: number;
+  searxngRetryBackoffMultiplier: number;
   embeddingsUrl?: string;
   searchWindow?: SearchTimeWindow;
 }
@@ -25,6 +28,9 @@ const SEARCH_DEFAULTS: Omit<SearchConfig, "embeddingsUrl" | "searchWindow"> = {
   maxPages: 3,
   timeoutMs: 8000,
   locale: "en-us",
+  searxngRetryAttempts: 3,
+  searxngRetryDelayMs: 1500,
+  searxngRetryBackoffMultiplier: 2,
 };
 
 const SEARCH_TIME_MAP: Record<string, SearchTimeWindow> = {
@@ -45,6 +51,16 @@ function parseEnvNumber(env: string | undefined, fallback: number): number {
   return Number.isNaN(n) ? fallback : n;
 }
 
+function parseEnvFloat(env: string | undefined, fallback: number): number {
+  if (env === undefined) return fallback;
+  const n = Number.parseFloat(env);
+  return Number.isNaN(n) ? fallback : n;
+}
+
+function minNumber(value: number, min: number): number {
+  return Number.isFinite(value) ? Math.max(value, min) : min;
+}
+
 function parseEnvTimeWindow(env: string | undefined): SearchTimeWindow | undefined {
   if (!env) return undefined;
   return SEARCH_TIME_MAP[env.trim().toLowerCase()] ?? undefined;
@@ -58,6 +74,9 @@ export function searchConfigFromEnv(overrides?: Partial<SearchConfig>): SearchCo
     timeoutMs: parseEnvNumber(env.FETCH_TIMEOUT_MS, overrides?.timeoutMs ?? SEARCH_DEFAULTS.timeoutMs),
     locale: env.SEARCH_LANGUAGE ?? overrides?.locale ?? SEARCH_DEFAULTS.locale,
     searxngUrl: env.SEARXNG_URL ?? overrides?.searxngUrl,
+    searxngRetryAttempts: minNumber(parseEnvNumber(env.SEARXNG_RETRY_ATTEMPTS, overrides?.searxngRetryAttempts ?? SEARCH_DEFAULTS.searxngRetryAttempts), 1),
+    searxngRetryDelayMs: minNumber(parseEnvNumber(env.SEARXNG_RETRY_DELAY_MS, overrides?.searxngRetryDelayMs ?? SEARCH_DEFAULTS.searxngRetryDelayMs), 0),
+    searxngRetryBackoffMultiplier: minNumber(parseEnvFloat(env.SEARXNG_RETRY_BACKOFF_MULTIPLIER, overrides?.searxngRetryBackoffMultiplier ?? SEARCH_DEFAULTS.searxngRetryBackoffMultiplier), 1),
     embeddingsUrl: env.EMBEDDINGS_BASE_URL ?? overrides?.embeddingsUrl,
     searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow,
   };

@@ -61,6 +61,9 @@ export function runtimeConfigFromEnv(env: Record<string, string | undefined> = p
     timeoutMs: env.FETCH_TIMEOUT_MS ? Number.parseInt(env.FETCH_TIMEOUT_MS, 10) : undefined,
     locale: env.SEARCH_LANGUAGE,
     searxngUrl: env.SEARXNG_URL,
+    searxngRetryAttempts: env.SEARXNG_RETRY_ATTEMPTS ? Number.parseInt(env.SEARXNG_RETRY_ATTEMPTS, 10) : undefined,
+    searxngRetryDelayMs: env.SEARXNG_RETRY_DELAY_MS ? Number.parseInt(env.SEARXNG_RETRY_DELAY_MS, 10) : undefined,
+    searxngRetryBackoffMultiplier: env.SEARXNG_RETRY_BACKOFF_MULTIPLIER ? Number.parseFloat(env.SEARXNG_RETRY_BACKOFF_MULTIPLIER) : undefined,
     embeddingsUrl: env.LM_STUDIO_URL ?? env.EMBEDDINGS_BASE_URL,
     searchWindow: parseTimeWindow(env.SEARCH_RECENCY_WINDOW),
   };

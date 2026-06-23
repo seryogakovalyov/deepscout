@@ -255,6 +255,9 @@ Returns: `url`, `domain`, `credibility_assessment`, `about_page`, `reputation_se
 | `SEARCH_LANGUAGE` | `"en-us"` | Locale/language for results |
 | `SEARCH_RECENCY_WINDOW` | — | Optional global time filter: `day` / `week` / `month` / `year`. Leave empty for general search; `search_recent` passes an explicit window. |
 | `SEARXNG_URL` | — | Self-hosted SearXNG instance (recommended) |
+| `SEARXNG_RETRY_ATTEMPTS` | `3` | Total SearXNG attempts before falling back |
+| `SEARXNG_RETRY_DELAY_MS` | `1500` | Initial delay before retrying an empty/throttled SearXNG response |
+| `SEARXNG_RETRY_BACKOFF_MULTIPLIER` | `2` | Multiplier for each subsequent SearXNG retry delay |
 | `EMBEDDINGS_BASE_URL` | `http://localhost:8000` | Embeddings model for semantic reranking |
 | `MCP_HTTP_HOST` | `"127.0.0.1"` | MCP HTTP server bind address |
 | `MCP_HTTP_PORT` | `8787` | MCP HTTP server port |

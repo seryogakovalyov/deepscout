@@ -11,6 +11,25 @@ function report(status, message) {
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);
 }
+function boundedAttempts(attempts) {
+    return Number.isFinite(attempts) ? Math.max(1, Math.floor(attempts)) : 1;
+}
+function nextDelayMs(baseDelayMs, backoffMultiplier, attemptIndex) {
+    const multiplier = Number.isFinite(backoffMultiplier) ? Math.max(1, backoffMultiplier) : 1;
+    const delay = Math.max(0, baseDelayMs) * Math.pow(multiplier, attemptIndex);
+    return Math.min(Math.round(delay), 30_000);
+}
+async function sleepWithAbort(ms, signal) {
+    if (ms <= 0 || signal?.aborted)
+        return;
+    await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            resolve();
+        }, { once: true });
+    });
+}
 function decodeHtmlEntities(s) {
     return s
         .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
@@ -103,6 +122,18 @@ async function scrapeBing(query, max, _time, signal, status) {
 }
 // SearXNG time_range values: day | week | month | year
 const SEARXNG_TIME = { d: "day", w: "week", m: "month", y: "year" };
+function warningToText(warning) {
+    if (typeof warning === "string")
+        return warning;
+    if (Array.isArray(warning))
+        return warning.map((item) => String(item)).join(":");
+    return Object.entries(warning)
+        .map(([key, value]) => `${key}:${String(value)}`)
+        .join(",");
+}
+function warningSuggestsBackoff(warnings) {
+    return warnings.some((warning) => /blocked|captcha|forbidden|too many|ratelimit|rate limit|timeout|timed out|429|403/i.test(warning));
+}
 async function searchSearXNG(baseUrl, query, max, timeoutMs = 10_000, time, signal, status) {
     const params = { q: query, format: "json" };
     if (time)
@@ -118,22 +149,49 @@ async function searchSearXNG(baseUrl, query, max, timeoutMs = 10_000, time, sign
         title: r.title ?? "",
         url: r.url ?? "",
         snippet: r.content ?? "",
-    }));
+    })).filter((r) => r.url && r.title);
+    const warnings = (data.unresponsive_engines ?? []).map(warningToText).filter(Boolean);
+    if (warnings.length > 0) {
+        report(status, `provider=searxng engine_warnings=${warnings.slice(0, 5).join(" | ")}`);
+    }
     report(status, `provider=searxng parsed_results=${results.length}`);
-    return results;
+    return {
+        hits: results,
+        warnings,
+        shouldBackoff: results.length === 0,
+    };
 }
-async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, signal, status) {
+async function searchSearXNGWithRetry(baseUrl, query, max, timeoutMs = 10_000, time, signal, status, retry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }) {
+    const attempts = boundedAttempts(retry.attempts);
+    let lastResult;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        if (signal?.aborted)
+            break;
+        report(status, `provider=searxng attempt=${attempt}/${attempts}`);
+        lastResult = await searchSearXNG(baseUrl, query, max, timeoutMs, time, signal, status);
+        if (!lastResult.shouldBackoff)
+            return lastResult.hits;
+        if (attempt >= attempts)
+            break;
+        const reason = warningSuggestsBackoff(lastResult.warnings) ? "engine_warning" : "zero_results";
+        const delayMs = nextDelayMs(retry.delayMs, retry.backoffMultiplier, attempt - 1);
+        report(status, `provider=searxng backoff reason=${reason} delay_ms=${delayMs}`);
+        await sleepWithAbort(delayMs, signal);
+    }
+    return lastResult?.hits ?? [];
+}
+async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }) {
     if (searxngUrl) {
         try {
-            const r = await searchSearXNG(searxngUrl, query, maxResults, 10_000, time, signal, status);
+            const r = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, time, signal, status, searxngRetry);
             if (r.length > 0)
                 return r;
             if (time) {
                 report(status, "provider=searxng result_count=0 retry_without_time_range=true");
-                const retry = await searchSearXNG(searxngUrl, query, maxResults, 10_000, undefined, signal, status);
-                if (retry.length > 0) {
-                    report(status, `provider=searxng fallback_without_time_range_results=${retry.length}`);
-                    return retry;
+                const retryWithoutTime = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, undefined, signal, status, searxngRetry);
+                if (retryWithoutTime.length > 0) {
+                    report(status, `provider=searxng fallback_without_time_range_results=${retryWithoutTime.length}`);
+                    return retryWithoutTime;
                 }
             }
             report(status, "provider=searxng result_count=0 fallback=duckduckgo");
@@ -166,9 +224,9 @@ async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, 
     }
 }
 /** Search and then fetch+read the top N pages. Skips URLs already in `fetchedUrls` (dedup). */
-async function searchAndRead(query, maxResults, maxPages, timeoutMs, time, locale = "en-us", fetchedUrls, searxngUrl, embeddingsUrl, signal, status) {
+async function searchAndRead(query, maxResults, maxPages, timeoutMs, time, locale = "en-us", fetchedUrls, searxngUrl, embeddingsUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }) {
     report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
-    let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status);
+    let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry);
     report(status, `search_results=${hits.length}`);
     if (embeddingsUrl && hits.length > 1) {
         report(status, `rerank=enabled embeddings_url=${embeddingsUrl}`);

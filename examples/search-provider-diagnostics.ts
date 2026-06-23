@@ -14,6 +14,11 @@ const maxResults = diagMaxResults ?? config.maxResults;
 const locale = config.locale;
 const searxngUrl = config.searxngUrl;
 const timeWindow = config.searchWindow;
+const searxngRetry = {
+  attempts: config.searxngRetryAttempts,
+  delayMs: config.searxngRetryDelayMs,
+  backoffMultiplier: config.searxngRetryBackoffMultiplier,
+};
 
 function parseTimeWindow(value: string | undefined): SearchTimeWindow | undefined {
   const map: Record<string, SearchTimeWindow> = { day: "d", week: "w", month: "m", year: "y" };
@@ -105,7 +110,19 @@ type ProviderDiagnostic = {
   resultCount: number;
   error?: string;
   sampleTitles: string[];
+  engineWarnings?: string[];
 };
+
+function warningToText(warning: unknown): string {
+  if (typeof warning === "string") return warning;
+  if (Array.isArray(warning)) return warning.map((item) => String(item)).join(":");
+  if (warning && typeof warning === "object") {
+    return Object.entries(warning)
+      .map(([key, value]) => `${key}:${String(value)}`)
+      .join(",");
+  }
+  return String(warning);
+}
 
 async function diagnoseSearXNG(): Promise<ProviderDiagnostic> {
   const url = searxngSearchUrl();
@@ -123,12 +140,13 @@ async function diagnoseSearXNG(): Promise<ProviderDiagnostic> {
   }
   try {
     const { status, text } = await fetchText(url);
-    const data = JSON.parse(text) as { results?: Array<{ title?: string; url?: string; content?: string }> };
+    const data = JSON.parse(text) as { results?: Array<{ title?: string; url?: string; content?: string }>; unresponsive_engines?: unknown[] };
     const hits = (data.results ?? []).slice(0, maxResults).map((r) => ({
       title: r.title ?? "",
       url: r.url ?? "",
       snippet: r.content ?? "",
     }));
+    const engineWarnings = (data.unresponsive_engines ?? []).map(warningToText).filter(Boolean);
     return {
       name: "SearXNG",
       configured: true,
@@ -138,6 +156,7 @@ async function diagnoseSearXNG(): Promise<ProviderDiagnostic> {
       status,
       resultCount: hits.length,
       sampleTitles: hits.map((hit) => hit.title).filter(Boolean),
+      engineWarnings,
     };
   } catch (err) {
     return {
@@ -220,6 +239,10 @@ function printProvider(provider: ProviderDiagnostic): void {
   if (provider.status !== undefined) console.log(`  http_status: ${provider.status}`);
   console.log(`  sample_search_results_count: ${provider.resultCount}`);
   if (provider.error) console.log(`  error: ${provider.error}`);
+  if (provider.engineWarnings && provider.engineWarnings.length > 0) {
+    console.log("  engine_warnings:");
+    for (const warning of provider.engineWarnings.slice(0, 10)) console.log(`    - ${warning}`);
+  }
   if (provider.sampleTitles.length > 0) {
     console.log("  sample_titles:");
     for (const title of provider.sampleTitles) console.log(`    - ${title}`);
@@ -242,6 +265,9 @@ async function main(): Promise<void> {
   console.log(`max_results: ${maxResults}`);
   console.log(`locale: ${locale}`);
   console.log(`time_window: ${timeWindow ?? "(none)"}`);
+  console.log(`searxng_retry_attempts: ${searxngRetry.attempts}`);
+  console.log(`searxng_retry_delay_ms: ${searxngRetry.delayMs}`);
+  console.log(`searxng_retry_backoff_multiplier: ${searxngRetry.backoffMultiplier}`);
   console.log("");
 
   console.log("=== PROVIDER HEALTH ===");
@@ -257,7 +283,7 @@ async function main(): Promise<void> {
 
   console.log("=== FALLBACK CHAIN RESULT ===");
   try {
-    const hits = await ddgSearch(query, maxResults, timeWindow, locale, searxngUrl);
+    const hits = await ddgSearch(query, maxResults, timeWindow, locale, searxngUrl, undefined, undefined, searxngRetry);
     console.log(`sample_search_results_count: ${hits.length}`);
     for (const hit of hits) console.log(`- ${hit.title} (${hit.url})`);
   } catch (err) {

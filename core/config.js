@@ -7,6 +7,9 @@ const SEARCH_DEFAULTS = {
     maxPages: 3,
     timeoutMs: 8000,
     locale: "en-us",
+    searxngRetryAttempts: 3,
+    searxngRetryDelayMs: 1500,
+    searxngRetryBackoffMultiplier: 2,
 };
 const SEARCH_TIME_MAP = {
     day: "d",
@@ -24,6 +27,15 @@ function parseEnvNumber(env, fallback) {
     const n = Number.parseInt(env, 10);
     return Number.isNaN(n) ? fallback : n;
 }
+function parseEnvFloat(env, fallback) {
+    if (env === undefined)
+        return fallback;
+    const n = Number.parseFloat(env);
+    return Number.isNaN(n) ? fallback : n;
+}
+function minNumber(value, min) {
+    return Number.isFinite(value) ? Math.max(value, min) : min;
+}
 function parseEnvTimeWindow(env) {
     if (!env)
         return undefined;
@@ -37,6 +49,9 @@ function searchConfigFromEnv(overrides) {
         timeoutMs: parseEnvNumber(env.FETCH_TIMEOUT_MS, overrides?.timeoutMs ?? SEARCH_DEFAULTS.timeoutMs),
         locale: env.SEARCH_LANGUAGE ?? overrides?.locale ?? SEARCH_DEFAULTS.locale,
         searxngUrl: env.SEARXNG_URL ?? overrides?.searxngUrl,
+        searxngRetryAttempts: minNumber(parseEnvNumber(env.SEARXNG_RETRY_ATTEMPTS, overrides?.searxngRetryAttempts ?? SEARCH_DEFAULTS.searxngRetryAttempts), 1),
+        searxngRetryDelayMs: minNumber(parseEnvNumber(env.SEARXNG_RETRY_DELAY_MS, overrides?.searxngRetryDelayMs ?? SEARCH_DEFAULTS.searxngRetryDelayMs), 0),
+        searxngRetryBackoffMultiplier: minNumber(parseEnvFloat(env.SEARXNG_RETRY_BACKOFF_MULTIPLIER, overrides?.searxngRetryBackoffMultiplier ?? SEARCH_DEFAULTS.searxngRetryBackoffMultiplier), 1),
         embeddingsUrl: env.EMBEDDINGS_BASE_URL ?? overrides?.embeddingsUrl,
         searchWindow: parseEnvTimeWindow(env.SEARCH_RECENCY_WINDOW) ?? overrides?.searchWindow,
     };

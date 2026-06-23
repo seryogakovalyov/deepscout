@@ -5,12 +5,43 @@ import { sleep } from "./utils";
 
 export type SearchStatus = (message: string) => void;
 
+export type SearXNGRetryOptions = {
+  attempts: number;
+  delayMs: number;
+  backoffMultiplier: number;
+};
+
 function report(status: SearchStatus | undefined, message: string): void {
   status?.(`[search] ${message}`);
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function boundedAttempts(attempts: number): number {
+  return Number.isFinite(attempts) ? Math.max(1, Math.floor(attempts)) : 1;
+}
+
+function nextDelayMs(baseDelayMs: number, backoffMultiplier: number, attemptIndex: number): number {
+  const multiplier = Number.isFinite(backoffMultiplier) ? Math.max(1, backoffMultiplier) : 1;
+  const delay = Math.max(0, baseDelayMs) * Math.pow(multiplier, attemptIndex);
+  return Math.min(Math.round(delay), 30_000);
+}
+
+async function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return;
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 function decodeHtmlEntities(s: string): string {
@@ -100,7 +131,32 @@ async function scrapeBing(query: string, max: number, _time?: SearchTimeWindow, 
 // SearXNG time_range values: day | week | month | year
 const SEARXNG_TIME: Record<string, string> = { d: "day", w: "week", m: "month", y: "year" };
 
-async function searchSearXNG(baseUrl: string, query: string, max: number, timeoutMs = 10_000, time?: SearchTimeWindow, signal?: AbortSignal, status?: SearchStatus): Promise<SearchHit[]> {
+type SearXNGEngineWarning = string | unknown[] | Record<string, unknown>;
+
+type SearXNGResponse = {
+  results?: Array<{ url?: string; title?: string; content?: string }>;
+  unresponsive_engines?: SearXNGEngineWarning[];
+};
+
+type SearXNGSearchResult = {
+  hits: SearchHit[];
+  warnings: string[];
+  shouldBackoff: boolean;
+};
+
+function warningToText(warning: SearXNGEngineWarning): string {
+  if (typeof warning === "string") return warning;
+  if (Array.isArray(warning)) return warning.map((item) => String(item)).join(":");
+  return Object.entries(warning)
+    .map(([key, value]) => `${key}:${String(value)}`)
+    .join(",");
+}
+
+function warningSuggestsBackoff(warnings: string[]): boolean {
+  return warnings.some((warning) => /blocked|captcha|forbidden|too many|ratelimit|rate limit|timeout|timed out|429|403/i.test(warning));
+}
+
+async function searchSearXNG(baseUrl: string, query: string, max: number, timeoutMs = 10_000, time?: SearchTimeWindow, signal?: AbortSignal, status?: SearchStatus): Promise<SearXNGSearchResult> {
   const params: Record<string, string> = { q: query, format: "json" };
   if (time) params["time_range"] = SEARXNG_TIME[time] ?? "";
   const url = `${baseUrl.replace(/\/$/, "")}/search?${new URLSearchParams(params)}`;
@@ -108,14 +164,51 @@ async function searchSearXNG(baseUrl: string, query: string, max: number, timeou
   const fetchSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
   const res = await fetch(url, { signal: fetchSignal, headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" } });
   if (!res.ok) throw new Error(`SearXNG HTTP ${res.status}`);
-  const data = await res.json() as { results?: Array<{ url: string; title: string; content: string }> };
+  const data = await res.json() as SearXNGResponse;
   const results = (data.results ?? []).slice(0, max).map((r) => ({
     title: r.title ?? "",
     url: r.url ?? "",
     snippet: r.content ?? "",
-  }));
+  })).filter((r) => r.url && r.title);
+  const warnings = (data.unresponsive_engines ?? []).map(warningToText).filter(Boolean);
+  if (warnings.length > 0) {
+    report(status, `provider=searxng engine_warnings=${warnings.slice(0, 5).join(" | ")}`);
+  }
   report(status, `provider=searxng parsed_results=${results.length}`);
-  return results;
+  return {
+    hits: results,
+    warnings,
+    shouldBackoff: results.length === 0,
+  };
+}
+
+async function searchSearXNGWithRetry(
+  baseUrl: string,
+  query: string,
+  max: number,
+  timeoutMs = 10_000,
+  time?: SearchTimeWindow,
+  signal?: AbortSignal,
+  status?: SearchStatus,
+  retry: SearXNGRetryOptions = { attempts: 1, delayMs: 0, backoffMultiplier: 1 },
+): Promise<SearchHit[]> {
+  const attempts = boundedAttempts(retry.attempts);
+  let lastResult: SearXNGSearchResult | undefined;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (signal?.aborted) break;
+    report(status, `provider=searxng attempt=${attempt}/${attempts}`);
+    lastResult = await searchSearXNG(baseUrl, query, max, timeoutMs, time, signal, status);
+    if (!lastResult.shouldBackoff) return lastResult.hits;
+    if (attempt >= attempts) break;
+
+    const reason = warningSuggestsBackoff(lastResult.warnings) ? "engine_warning" : "zero_results";
+    const delayMs = nextDelayMs(retry.delayMs, retry.backoffMultiplier, attempt - 1);
+    report(status, `provider=searxng backoff reason=${reason} delay_ms=${delayMs}`);
+    await sleepWithAbort(delayMs, signal);
+  }
+
+  return lastResult?.hits ?? [];
 }
 
 export async function ddgSearch(
@@ -126,17 +219,18 @@ export async function ddgSearch(
   searxngUrl?: string,
   signal?: AbortSignal,
   status?: SearchStatus,
+  searxngRetry: SearXNGRetryOptions = { attempts: 1, delayMs: 0, backoffMultiplier: 1 },
 ): Promise<SearchHit[]> {
   if (searxngUrl) {
     try {
-      const r = await searchSearXNG(searxngUrl, query, maxResults, 10_000, time, signal, status);
+      const r = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, time, signal, status, searxngRetry);
       if (r.length > 0) return r;
       if (time) {
         report(status, "provider=searxng result_count=0 retry_without_time_range=true");
-        const retry = await searchSearXNG(searxngUrl, query, maxResults, 10_000, undefined, signal, status);
-        if (retry.length > 0) {
-          report(status, `provider=searxng fallback_without_time_range_results=${retry.length}`);
-          return retry;
+        const retryWithoutTime = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, undefined, signal, status, searxngRetry);
+        if (retryWithoutTime.length > 0) {
+          report(status, `provider=searxng fallback_without_time_range_results=${retryWithoutTime.length}`);
+          return retryWithoutTime;
         }
       }
       report(status, "provider=searxng result_count=0 fallback=duckduckgo");
@@ -176,9 +270,10 @@ export async function searchAndRead(
   embeddingsUrl?: string,
   signal?: AbortSignal,
   status?: SearchStatus,
+  searxngRetry: SearXNGRetryOptions = { attempts: 1, delayMs: 0, backoffMultiplier: 1 },
 ): Promise<{ hits: SearchHit[]; pages: PageResult[] }> {
   report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
-  let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status);
+  let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry);
   report(status, `search_results=${hits.length}`);
   if (embeddingsUrl && hits.length > 1) {
     report(status, `rerank=enabled embeddings_url=${embeddingsUrl}`);
