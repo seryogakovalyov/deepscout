@@ -12,6 +12,7 @@ const diagMaxResults = process.env.SEARCH_DIAG_MAX_RESULTS
 const query = diagQuery ?? "llama.cpp function calling";
 const maxResults = diagMaxResults ?? config.maxResults;
 const locale = config.locale;
+const exaApiKey = config.exaApiKey;
 const searxngUrl = config.searxngUrl;
 const timeWindow = config.searchWindow;
 const searxngRetry = {
@@ -27,6 +28,7 @@ function parseTimeWindow(value: string | undefined): SearchTimeWindow | undefine
 }
 
 function selectedProvider(): string {
+  if (exaApiKey) return "Exa";
   return searxngUrl ? "SearXNG" : "DuckDuckGo HTML";
 }
 
@@ -69,6 +71,62 @@ function searxngSearchUrl(): string | null {
   const params: Record<string, string> = { q: query, format: "json" };
   if (timeWindow) params.time_range = timeRange[timeWindow];
   return `${searxngUrl.replace(/\/$/, "")}/search?${new URLSearchParams(params)}`;
+}
+
+async function diagnoseExa(): Promise<ProviderDiagnostic> {
+  if (!exaApiKey) {
+    return {
+      name: "Exa",
+      configured: false,
+      selected: false,
+      healthy: false,
+      url: "https://api.exa.ai/search",
+      resultCount: 0,
+      sampleTitles: [],
+      error: "EXA_API_KEY is not configured",
+    };
+  }
+  try {
+    const body: Record<string, unknown> = {
+      query,
+      type: "auto",
+      numResults: maxResults,
+      contents: { highlights: true },
+    };
+    const res = await fetch("https://api.exa.ai/search", {
+      method: "POST",
+      signal: AbortSignal.timeout(10_000),
+      headers: {
+        "x-api-key": exaApiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    const data = JSON.parse(text) as { results?: Array<{ title?: string; url?: string }> };
+    const hits = (data.results ?? []).slice(0, maxResults);
+    return {
+      name: "Exa",
+      configured: true,
+      selected: true,
+      healthy: res.status >= 200 && res.status < 300 && hits.length > 0,
+      url: "https://api.exa.ai/search",
+      status: res.status,
+      resultCount: hits.length,
+      sampleTitles: hits.map((hit) => hit.title ?? "").filter(Boolean),
+    };
+  } catch (err) {
+    return {
+      name: "Exa",
+      configured: true,
+      selected: true,
+      healthy: false,
+      url: "https://api.exa.ai/search",
+      resultCount: 0,
+      sampleTitles: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function parseDDG(html: string): Array<{ title: string; url: string; snippet: string }> {
@@ -251,6 +309,7 @@ function printProvider(provider: ProviderDiagnostic): void {
 
 async function main(): Promise<void> {
   console.log("=== CONFIGURED PROVIDERS ===");
+  console.log(`Exa: ${exaApiKey ? "configured" : "(not configured)"}`);
   console.log(`SearXNG: ${searxngUrl ? searxngUrl : "(not configured)"}`);
   console.log("DuckDuckGo HTML: enabled");
   console.log("Bing HTML: enabled as fallback");
@@ -272,6 +331,7 @@ async function main(): Promise<void> {
 
   console.log("=== PROVIDER HEALTH ===");
   const providers = await Promise.all([
+    diagnoseExa(),
     diagnoseSearXNG(),
     diagnoseDDG(),
     diagnoseBing(),
@@ -283,7 +343,7 @@ async function main(): Promise<void> {
 
   console.log("=== FALLBACK CHAIN RESULT ===");
   try {
-    const hits = await ddgSearch(query, maxResults, timeWindow, locale, searxngUrl, undefined, undefined, searxngRetry);
+    const hits = await ddgSearch(query, maxResults, timeWindow, locale, searxngUrl, undefined, undefined, searxngRetry, exaApiKey);
     console.log(`sample_search_results_count: ${hits.length}`);
     for (const hit of hits) console.log(`- ${hit.title} (${hit.url})`);
   } catch (err) {

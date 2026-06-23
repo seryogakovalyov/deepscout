@@ -48,6 +48,7 @@ function searchConfigFromEnv(overrides) {
         maxPages: parseEnvNumber(env.MAX_PAGES_PER_SEARCH, overrides?.maxPages ?? SEARCH_DEFAULTS.maxPages),
         timeoutMs: parseEnvNumber(env.FETCH_TIMEOUT_MS, overrides?.timeoutMs ?? SEARCH_DEFAULTS.timeoutMs),
         locale: env.SEARCH_LANGUAGE ?? overrides?.locale ?? SEARCH_DEFAULTS.locale,
+        exaApiKey: env.EXA_API_KEY ?? overrides?.exaApiKey,
         searxngUrl: env.SEARXNG_URL ?? overrides?.searxngUrl,
         searxngRetryAttempts: minNumber(parseEnvNumber(env.SEARXNG_RETRY_ATTEMPTS, overrides?.searxngRetryAttempts ?? SEARCH_DEFAULTS.searxngRetryAttempts), 1),
         searxngRetryDelayMs: minNumber(parseEnvNumber(env.SEARXNG_RETRY_DELAY_MS, overrides?.searxngRetryDelayMs ?? SEARCH_DEFAULTS.searxngRetryDelayMs), 0),

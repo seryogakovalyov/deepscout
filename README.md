@@ -268,6 +268,7 @@ Returns: `url`, `domain`, `credibility_assessment`, `about_page`, `reputation_se
 | `FETCH_TIMEOUT_MS` | `8000` | Per-page fetch timeout (ms) |
 | `SEARCH_LANGUAGE` | `"en-us"` | Locale/language for results |
 | `SEARCH_RECENCY_WINDOW` | — | Optional global time filter: `day` / `week` / `month` / `year`. Leave empty for general search; `search_recent` passes an explicit window. |
+| `EXA_API_KEY` | — | Optional Exa API key. When configured, Exa is tried before SearXNG/HTML fallbacks. |
 | `SEARXNG_URL` | — | Self-hosted SearXNG instance (recommended) |
 | `SEARXNG_RETRY_ATTEMPTS` | `3` | Total SearXNG attempts before falling back |
 | `SEARXNG_RETRY_DELAY_MS` | `1500` | Initial delay before retrying an empty/throttled SearXNG response |

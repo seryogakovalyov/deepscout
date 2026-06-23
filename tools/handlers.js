@@ -118,8 +118,8 @@ function createToolHandlers(config) {
         delayMs: config.searxngRetryDelayMs,
         backoffMultiplier: config.searxngRetryBackoffMultiplier,
     };
-    const ddg = (query, max, time, signal, status) => (0, search_1.ddgSearch)(query, max, time, config.locale, config.searxngUrl, signal, status, searxngRetry);
-    const sar = (query, max, pages, time, dedup, signal, status) => (0, search_1.searchAndRead)(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry);
+    const ddg = (query, max, time, signal, status) => (0, search_1.ddgSearch)(query, max, time, config.locale, config.searxngUrl, signal, status, searxngRetry, config.exaApiKey);
+    const sar = (query, max, pages, time, dedup, signal, status) => (0, search_1.searchAndRead)(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry, config.exaApiKey);
     return {
         get_datetime: async () => {
             return currentDateTimePayload();

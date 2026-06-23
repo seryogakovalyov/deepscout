@@ -122,6 +122,50 @@ async function scrapeBing(query, max, _time, signal, status) {
 }
 // SearXNG time_range values: day | week | month | year
 const SEARXNG_TIME = { d: "day", w: "week", m: "month", y: "year" };
+const TIME_WINDOW_DAYS = { d: 1, w: 7, m: 31, y: 366 };
+function startPublishedDate(time) {
+    if (!time)
+        return undefined;
+    const start = new Date(Date.now() - TIME_WINDOW_DAYS[time] * 24 * 60 * 60 * 1000);
+    return start.toISOString();
+}
+function exaSnippet(result) {
+    if (Array.isArray(result.highlights) && result.highlights.length > 0)
+        return result.highlights.join("\n");
+    return result.highlight ?? result.summary ?? result.text ?? "";
+}
+async function searchExa(apiKey, query, max, timeoutMs = 10_000, time, signal, status) {
+    const fetchSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+    const body = {
+        query,
+        type: "auto",
+        numResults: max,
+        contents: { highlights: true },
+    };
+    const startDate = startPublishedDate(time);
+    if (startDate)
+        body.startPublishedDate = startDate;
+    report(status, `provider=exa request type=auto num_results=${max} time_window=${time ?? "none"}`);
+    const res = await fetch("https://api.exa.ai/search", {
+        method: "POST",
+        signal: fetchSignal,
+        headers: {
+            "x-api-key": apiKey,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok)
+        throw new Error(`Exa HTTP ${res.status}`);
+    const data = await res.json();
+    const results = (data.results ?? []).slice(0, max).map((r) => ({
+        title: r.title ?? "",
+        url: r.url ?? "",
+        snippet: exaSnippet(r),
+    })).filter((r) => r.url && r.title);
+    report(status, `provider=exa parsed_results=${results.length}`);
+    return results;
+}
 function warningToText(warning) {
     if (typeof warning === "string")
         return warning;
@@ -180,7 +224,21 @@ async function searchSearXNGWithRetry(baseUrl, query, max, timeoutMs = 10_000, t
     }
     return lastResult?.hits ?? [];
 }
-async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }) {
+async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }, exaApiKey) {
+    if (exaApiKey) {
+        try {
+            const results = await searchExa(exaApiKey, query, maxResults, 10_000, time, signal, status);
+            if (results.length > 0)
+                return results;
+            report(status, "provider=exa result_count=0 fallback=searxng");
+        }
+        catch (error) {
+            report(status, `provider=exa error=${errorMessage(error)} fallback=searxng`);
+        }
+    }
+    else {
+        report(status, "provider=exa skipped reason=not_configured");
+    }
     if (searxngUrl) {
         try {
             const r = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, time, signal, status, searxngRetry);
@@ -224,9 +282,9 @@ async function ddgSearch(query, maxResults, time, locale = "en-us", searxngUrl, 
     }
 }
 /** Search and then fetch+read the top N pages. Skips URLs already in `fetchedUrls` (dedup). */
-async function searchAndRead(query, maxResults, maxPages, timeoutMs, time, locale = "en-us", fetchedUrls, searxngUrl, embeddingsUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }) {
-    report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
-    let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry);
+async function searchAndRead(query, maxResults, maxPages, timeoutMs, time, locale = "en-us", fetchedUrls, searxngUrl, embeddingsUrl, signal, status, searxngRetry = { attempts: 1, delayMs: 0, backoffMultiplier: 1 }, exaApiKey) {
+    report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} exa=${exaApiKey ? "configured" : "not_configured"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
+    let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry, exaApiKey);
     report(status, `search_results=${hits.length}`);
     if (embeddingsUrl && hits.length > 1) {
         report(status, `rerank=enabled embeddings_url=${embeddingsUrl}`);

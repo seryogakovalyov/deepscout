@@ -129,9 +129,9 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
     backoffMultiplier: config.searxngRetryBackoffMultiplier,
   };
   const ddg = (query: string, max: number, time?: SearchTimeWindow, signal?: AbortSignal, status?: (text: string) => void) =>
-    ddgSearch(query, max, time, config.locale, config.searxngUrl, signal, status, searxngRetry);
+    ddgSearch(query, max, time, config.locale, config.searxngUrl, signal, status, searxngRetry, config.exaApiKey);
   const sar = (query: string, max: number, pages: number, time?: SearchTimeWindow, dedup?: Set<string>, signal?: AbortSignal, status?: (text: string) => void) =>
-    searchAndRead(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry);
+    searchAndRead(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry, config.exaApiKey);
 
   return {
     get_datetime: async () => {

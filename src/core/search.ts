@@ -131,6 +131,64 @@ async function scrapeBing(query: string, max: number, _time?: SearchTimeWindow, 
 // SearXNG time_range values: day | week | month | year
 const SEARXNG_TIME: Record<string, string> = { d: "day", w: "week", m: "month", y: "year" };
 
+const TIME_WINDOW_DAYS: Record<SearchTimeWindow, number> = { d: 1, w: 7, m: 31, y: 366 };
+
+type ExaResponse = {
+  results?: Array<{
+    title?: string;
+    url?: string;
+    highlights?: string[];
+    highlight?: string;
+    text?: string;
+    summary?: string;
+    publishedDate?: string;
+  }>;
+};
+
+function startPublishedDate(time?: SearchTimeWindow): string | undefined {
+  if (!time) return undefined;
+  const start = new Date(Date.now() - TIME_WINDOW_DAYS[time] * 24 * 60 * 60 * 1000);
+  return start.toISOString();
+}
+
+function exaSnippet(result: NonNullable<ExaResponse["results"]>[number]): string {
+  if (Array.isArray(result.highlights) && result.highlights.length > 0) return result.highlights.join("\n");
+  return result.highlight ?? result.summary ?? result.text ?? "";
+}
+
+async function searchExa(apiKey: string, query: string, max: number, timeoutMs = 10_000, time?: SearchTimeWindow, signal?: AbortSignal, status?: SearchStatus): Promise<SearchHit[]> {
+  const fetchSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+  const body: Record<string, unknown> = {
+    query,
+    type: "auto",
+    numResults: max,
+    contents: { highlights: true },
+  };
+  const startDate = startPublishedDate(time);
+  if (startDate) body.startPublishedDate = startDate;
+
+  report(status, `provider=exa request type=auto num_results=${max} time_window=${time ?? "none"}`);
+  const res = await fetch("https://api.exa.ai/search", {
+    method: "POST",
+    signal: fetchSignal,
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Exa HTTP ${res.status}`);
+
+  const data = await res.json() as ExaResponse;
+  const results = (data.results ?? []).slice(0, max).map((r) => ({
+    title: r.title ?? "",
+    url: r.url ?? "",
+    snippet: exaSnippet(r),
+  })).filter((r) => r.url && r.title);
+  report(status, `provider=exa parsed_results=${results.length}`);
+  return results;
+}
+
 type SearXNGEngineWarning = string | unknown[] | Record<string, unknown>;
 
 type SearXNGResponse = {
@@ -220,7 +278,20 @@ export async function ddgSearch(
   signal?: AbortSignal,
   status?: SearchStatus,
   searxngRetry: SearXNGRetryOptions = { attempts: 1, delayMs: 0, backoffMultiplier: 1 },
+  exaApiKey?: string,
 ): Promise<SearchHit[]> {
+  if (exaApiKey) {
+    try {
+      const results = await searchExa(exaApiKey, query, maxResults, 10_000, time, signal, status);
+      if (results.length > 0) return results;
+      report(status, "provider=exa result_count=0 fallback=searxng");
+    } catch (error) {
+      report(status, `provider=exa error=${errorMessage(error)} fallback=searxng`);
+    }
+  } else {
+    report(status, "provider=exa skipped reason=not_configured");
+  }
+
   if (searxngUrl) {
     try {
       const r = await searchSearXNGWithRetry(searxngUrl, query, maxResults, 10_000, time, signal, status, searxngRetry);
@@ -271,9 +342,10 @@ export async function searchAndRead(
   signal?: AbortSignal,
   status?: SearchStatus,
   searxngRetry: SearXNGRetryOptions = { attempts: 1, delayMs: 0, backoffMultiplier: 1 },
+  exaApiKey?: string,
 ): Promise<{ hits: SearchHit[]; pages: PageResult[] }> {
-  report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
-  let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry);
+  report(status, `query="${query}" max_results=${maxResults} time_window=${time ?? "none"} exa=${exaApiKey ? "configured" : "not_configured"} searxng=${searxngUrl ? "configured" : "not_configured"}`);
+  let hits = await ddgSearch(query, maxResults, time, locale, searxngUrl, signal, status, searxngRetry, exaApiKey);
   report(status, `search_results=${hits.length}`);
   if (embeddingsUrl && hits.length > 1) {
     report(status, `rerank=enabled embeddings_url=${embeddingsUrl}`);

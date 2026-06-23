@@ -133,22 +133,27 @@ test("executeToolCall returns cancelled when signal is already aborted", async (
 
 test("createRuntimeConfig reads search provider settings from env", () => {
   const previous = {
+    exaApiKey: process.env.EXA_API_KEY,
     searxngUrl: process.env.SEARXNG_URL,
     attempts: process.env.SEARXNG_RETRY_ATTEMPTS,
     delay: process.env.SEARXNG_RETRY_DELAY_MS,
     backoff: process.env.SEARXNG_RETRY_BACKOFF_MULTIPLIER,
   };
+  process.env.EXA_API_KEY = "test-exa-key";
   process.env.SEARXNG_URL = "http://localhost:8080";
   process.env.SEARXNG_RETRY_ATTEMPTS = "4";
   process.env.SEARXNG_RETRY_DELAY_MS = "2500";
   process.env.SEARXNG_RETRY_BACKOFF_MULTIPLIER = "1.5";
   try {
     const config = createRuntimeConfig();
+    assert.equal(config.exaApiKey, "test-exa-key");
     assert.equal(config.searxngUrl, "http://localhost:8080");
     assert.equal(config.searxngRetryAttempts, 4);
     assert.equal(config.searxngRetryDelayMs, 2500);
     assert.equal(config.searxngRetryBackoffMultiplier, 1.5);
   } finally {
+    if (previous.exaApiKey === undefined) delete process.env.EXA_API_KEY;
+    else process.env.EXA_API_KEY = previous.exaApiKey;
     if (previous.searxngUrl === undefined) delete process.env.SEARXNG_URL;
     else process.env.SEARXNG_URL = previous.searxngUrl;
     if (previous.attempts === undefined) delete process.env.SEARXNG_RETRY_ATTEMPTS;

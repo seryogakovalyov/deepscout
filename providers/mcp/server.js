@@ -20,6 +20,7 @@ function runtimeConfigFromEnv(env = process.env) {
         maxPages: env.MAX_PAGES_PER_SEARCH ? Number.parseInt(env.MAX_PAGES_PER_SEARCH, 10) : undefined,
         timeoutMs: env.FETCH_TIMEOUT_MS ? Number.parseInt(env.FETCH_TIMEOUT_MS, 10) : undefined,
         locale: env.SEARCH_LANGUAGE,
+        exaApiKey: env.EXA_API_KEY,
         searxngUrl: env.SEARXNG_URL,
         searxngRetryAttempts: env.SEARXNG_RETRY_ATTEMPTS ? Number.parseInt(env.SEARXNG_RETRY_ATTEMPTS, 10) : undefined,
         searxngRetryDelayMs: env.SEARXNG_RETRY_DELAY_MS ? Number.parseInt(env.SEARXNG_RETRY_DELAY_MS, 10) : undefined,
