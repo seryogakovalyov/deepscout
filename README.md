@@ -2,7 +2,7 @@
 
 **Research-grade web search with reasoning, source verification, and multi-angle research.**
 
-DeepScout exposes **14 research tools** via MCP (stdio or HTTP) and OpenAI-compatible APIs. It goes beyond search snippets by fetching and reading pages, cross-verifying claims across sources, ranking by semantic relevance, and surfacing credibility signals — all without API keys.
+DeepScout exposes **15 research tools** via MCP (stdio or HTTP) and OpenAI-compatible APIs. It goes beyond search snippets by fetching and reading pages, cross-verifying claims across sources, ranking by semantic relevance, and surfacing credibility signals — all without API keys.
 
 ---
 
@@ -54,7 +54,19 @@ Every URL gets an automatic credibility assessment based on domain signals:
 
 ## Tools
 
-All 14 tools are defined with Zod schemas and exposed via `tools/list`. Each tool's handler lives in `src/tools/handlers.ts`.
+All 15 tools are defined with Zod schemas and exposed via `tools/list`. Each tool's handler lives in `src/tools/handlers.ts`.
+
+### `get_datetime` — Current date/time anchor
+
+Returns the current date and time from the tool runtime.
+
+```
+get_datetime()
+```
+
+Returns: `current_date`, `current_time_iso`, `local_datetime`, `timezone`, `unix_ms`, `current_fact_policy`, `instruction`.
+
+Use this before answering questions that depend on "today", "now", "current", "latest", recent releases, or current availability. It establishes the date only; current factual claims still require `search_recent`, `search_news`, `search`, or `fetch_and_read`.
 
 ### `clarify` — Ambiguity check (always called first)
 
@@ -158,7 +170,9 @@ Returns results only from the specified time window.
 search_recent(query: string, window?: "day" | "week" | "month" | "year" = "week", read_pages?: number = 2)
 ```
 
-Returns: `query`, `window`, `results_found`, `independent_publishers_read`, `results`, `pages_read`, `instruction`.
+Returns: `query`, `window`, `official_source_strategy`, `results_found`, `high_credibility_count`, `confidence`, `independent_publishers_read`, `results`, `pages_read`, `instruction`.
+
+For current AI model/release queries, this tool adds a small neutral source-search set across model registries and code hosts, then reads high-credibility sources first. If all sources are unknown/low credibility, it returns `confidence: "low"` and instructs the model not to make definitive claims.
 
 ---
 
@@ -288,7 +302,7 @@ See `.env.example` for a ready-to-copy template.
               ┌─────────┼───────────┐
               │         │           │
          ┌────┴────┐ ┌──┴───┐ ┌─────┴──────┐
-         │   14    │ │Config│ │   Core     │
+         │   15    │ │Config│ │   Core     │
          │  Tools  │ │& Env │ │  Engines   │
          │Handlers │ │      │ │            │
          └─────────┘ └──────┘ └─────┬──────┘
@@ -348,6 +362,8 @@ npm run mcp:http
 # Run smoke test against llama.cpp / LM Studio
 npm run smoke:llamacpp
 ```
+
+The tool loop limits search/research fan-out to one search-class tool call per assistant turn by default. Extra same-turn search calls receive a controlled tool error, so the model must continue iteratively instead of flooding SearXNG/upstream engines.
 
 ---
 

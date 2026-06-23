@@ -6,6 +6,7 @@
   "scripts": {
     "build": "npx tsc",
     "diag:search": "npm run build && node --env-file-if-exists=.env examples/search-provider-diagnostics.ts",
+    "diag:tools": "npm run build && node examples/tool-policy-diagnostics.ts",
     "mcp:http": "npm run build && node --env-file-if-exists=.env providers/mcp/httpServer.js",
     "mcp:stdio": "npm run build && node --env-file-if-exists=.env providers/mcp/server.js",
     "smoke:llamacpp": "npm run build && node --env-file-if-exists=.env examples/llamacpp-smoke-test.ts",

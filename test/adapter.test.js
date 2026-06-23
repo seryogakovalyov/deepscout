@@ -12,7 +12,7 @@ function getTool(name) {
 
 test("exportTools returns unique OpenAI-compatible tool definitions", () => {
   const tools = exportTools();
-  assert.equal(tools.length, 14);
+  assert.equal(tools.length, 15);
 
   const names = tools.map((item) => item.function.name);
   assert.equal(new Set(names).size, names.length);
@@ -25,7 +25,7 @@ test("exportTools returns unique OpenAI-compatible tool definitions", () => {
     assert.equal(tool.function.parameters.additionalProperties, false);
   }
 
-  for (const requiredName of ["search", "fetch_and_read", "fact_check", "check_source"]) {
+  for (const requiredName of ["get_datetime", "search", "fetch_and_read", "fact_check", "check_source"]) {
     assert.ok(names.includes(requiredName), `Missing ${requiredName}`);
   }
 });
@@ -50,6 +50,25 @@ test("schema conversion preserves key field constraints", () => {
   const searchNews = getTool("search_news").function.parameters;
   assert.deepEqual(searchNews.properties.window.enum, ["day", "week", "month", "any"]);
   assert.deepEqual(searchNews.required, ["query"]);
+
+  const getDatetime = getTool("get_datetime").function.parameters;
+  assert.deepEqual(getDatetime.required, []);
+  assert.deepEqual(getDatetime.properties, {});
+});
+
+test("executeToolCall executes get_datetime with explicit current date guidance", async () => {
+  const result = await executeToolCall({
+    name: "get_datetime",
+    arguments: {},
+  });
+  const parsed = JSON.parse(result);
+  assert.match(parsed.current_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(typeof parsed.current_time_iso, "string");
+  assert.equal(typeof parsed.timezone, "string");
+  assert.equal(parsed.current_fact_policy.sufficient_to_answer_current_factual_questions, false);
+  assert.equal(parsed.current_fact_policy.requires_followup_research_for_current_facts, true);
+  assert.ok(parsed.current_fact_policy.recommended_next_tools.includes("search_recent"));
+  assert.match(parsed.instruction, /do not answer from model memory/i);
 });
 
 test("executeToolCall executes clarify with OpenAI-style tool call shape", async () => {

@@ -1,6 +1,22 @@
 import { z } from "zod";
 
 export const toolDefinitions = {
+  get_datetime: {
+    name: "get_datetime",
+    description: `
+        Return the current date and time from the tool runtime.
+
+        Use this before answering any question that depends on "today", "now",
+        "current", "latest", recent releases, current model availability, current
+        events, prices, policies, or time-sensitive comparisons.
+
+        Important: this tool only establishes the current date/time. For factual
+        claims about what exists or what happened recently, call a search tool
+        after this tool instead of relying on model memory. Date check alone is
+        not sufficient evidence for current availability/status claims.
+      `,
+    parameters: {},
+  },
   clarify: {
     name: "clarify",
     description: `
@@ -28,6 +44,9 @@ export const toolDefinitions = {
         • Flags source credibility for each result
 
         Use for: most questions that need factual answers from the web.
+        Required after get_datetime when the user asks about current/latest
+        availability, current model releases, product status, or recent facts
+        and no narrower time window is needed.
         Prefer deep_search when you need multiple angles or research_topic for comprehensive reports.
       `,
     parameters: {
@@ -68,6 +87,8 @@ export const toolDefinitions = {
 
         Use when: you need a complete picture, not just one answer. Complex topics,
         controversies, research questions, anything where one search could miss something important.
+        For current/latest topics, include the current year/date in the topic or
+        angles so the search does not drift into stale prior years.
       `,
     parameters: {
       topic: z.string().describe("The central topic to research deeply."),
@@ -137,6 +158,9 @@ export const toolDefinitions = {
 
         Use when: asking about current events, recent developments, new research,
         product releases, policy changes, or anything where recency matters.
+        Required for current model availability/status questions after get_datetime.
+        Include the current year/date in the query; do not answer from memory
+        after date-checking.
       `,
     parameters: {
       query: z.string().describe("What to search for."),
@@ -238,6 +262,8 @@ export const toolDefinitions = {
         Use when: the question is about a current event, breaking news, policy change,
         corporate announcement, or anything where journalistic sourcing matters.
         Pair with search_recent for time-filtered news coverage.
+        For current/public-information questions, call this after get_datetime
+        when the answer should be grounded in recent reporting.
       `,
     parameters: {
       query: z.string().describe("News topic or event to search for."),

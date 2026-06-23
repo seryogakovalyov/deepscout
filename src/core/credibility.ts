@@ -17,14 +17,48 @@ const ACADEMIC_DOMAINS = new Set([
 const LOW_CREDIBILITY_SIGNALS = ["blogspot.com", "wordpress.com", "reddit.com",
   "quora.com", "yahoo.com", "medium.com"];
 
+function isAiModelRegistryOrProjectSource(hostname: string, pathname: string): boolean {
+  if ([
+    "huggingface.co",
+    "github.com",
+    "modelscope.cn",
+    "arxiv.org",
+    "paperswithcode.com",
+  ].includes(hostname)) {
+    return true;
+  }
+
+  const normalizedPath = pathname.toLowerCase();
+  if ([
+    "ai.google.dev",
+    "developers.googleblog.com",
+    "blog.google",
+    "googleblog.com",
+    "openai.com",
+    "anthropic.com",
+    "mistral.ai",
+    "ai.meta.com",
+    "deepmind.google",
+    "cohere.com",
+  ].includes(hostname)) {
+    return /ai|model|llm|release|research|developer|docs|blog|news/i.test(normalizedPath);
+  }
+
+  return false;
+}
+
 export function assessDomainCredibility(url: string): SourceCredibility {
   try {
-    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, "");
+    const pathname = parsed.pathname;
     const signals: string[] = [];
     let type = "website";
     let credibility: "high" | "medium" | "low" | "unknown" = "unknown";
 
-    if (GOV_DOMAINS.test(hostname)) {
+    if (isAiModelRegistryOrProjectSource(hostname, pathname)) {
+      type = "AI model registry/project source"; credibility = "high"; signals.push("known AI model registry, code host, research, or vendor source");
+    } else if (GOV_DOMAINS.test(hostname)) {
       type = "government"; credibility = "high"; signals.push("government domain");
     } else if (EDU_DOMAINS.test(hostname)) {
       type = "academic institution"; credibility = "high"; signals.push("educational domain");

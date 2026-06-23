@@ -25,7 +25,8 @@ export type ToolLoopChat = (
 export type ToolLoopEvent =
   | { type: "assistant_message"; iteration: number; message: OpenAICompatibleMessage }
   | { type: "tool_call"; iteration: number; toolCall: OpenAICompatibleToolCall; parsedArguments: unknown }
-  | { type: "tool_result"; iteration: number; toolCall: OpenAICompatibleToolCall; result: string };
+  | { type: "tool_result"; iteration: number; toolCall: OpenAICompatibleToolCall; result: string }
+  | { type: "tool_denied"; iteration: number; toolCall: OpenAICompatibleToolCall; reason: string };
 
 export type ToolLoopOptions = {
   messages: OpenAICompatibleMessage[];
@@ -33,6 +34,7 @@ export type ToolLoopOptions = {
   chat: ToolLoopChat;
   executeToolCall: (call: ToolCallInput, options?: ExecuteToolCallOptions) => Promise<string>;
   maxIterations?: number;
+  maxSearchToolCallsPerTurn?: number;
   config?: Partial<RuntimeConfig>;
   signal?: AbortSignal;
   status?: (text: string) => void;
@@ -68,8 +70,37 @@ function toolCallSignature(toolCall: OpenAICompatibleToolCall): string {
   });
 }
 
+const SEARCH_TOOL_NAMES = new Set([
+  "search",
+  "search_recent",
+  "search_news",
+  "deep_search",
+  "research_topic",
+  "fact_check",
+  "verify_statistic",
+  "find_primary_source",
+  "find_expert_views",
+  "search_academic",
+  "compare_sources",
+  "check_source",
+]);
+
+function isSearchToolCall(toolCall: OpenAICompatibleToolCall): boolean {
+  return SEARCH_TOOL_NAMES.has(toolCall.function.name);
+}
+
+function deniedToolResult(toolName: string, reason: string): string {
+  return JSON.stringify({
+    tool_error: true,
+    tool: toolName,
+    error: reason,
+    hint: "Use the successful tool results already returned in this turn, then decide whether another search is still needed in the next iteration.",
+  }, null, 2);
+}
+
 export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopResult> {
   const maxIterations = options.maxIterations ?? 10;
+  const maxSearchToolCallsPerTurn = options.maxSearchToolCallsPerTurn ?? 1;
   const messages = [...options.messages];
   const calledTools: string[] = [];
   const toolResults: ToolLoopResult["toolResults"] = [];
@@ -92,6 +123,7 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopRes
       break;
     }
 
+    let searchToolCallsThisTurn = 0;
     for (const toolCall of toolCalls) {
       const signature = toolCallSignature(toolCall);
       if (seenToolCalls.has(signature)) {
@@ -107,11 +139,21 @@ export async function runToolLoop(options: ToolLoopOptions): Promise<ToolLoopRes
         parsedArguments: parseArguments(toolCall.function.arguments),
       });
 
-      const result = await options.executeToolCall(toolCall, {
-        config: options.config,
-        signal: options.signal,
-        status: options.status,
-      });
+      const searchToolCall = isSearchToolCall(toolCall);
+      if (searchToolCall) searchToolCallsThisTurn += 1;
+      const deniedReason = searchToolCall && searchToolCallsThisTurn > maxSearchToolCallsPerTurn
+        ? `too many search/research tool calls in one assistant turn (${searchToolCallsThisTurn}); limit is ${maxSearchToolCallsPerTurn}`
+        : "";
+      const result = deniedReason
+        ? deniedToolResult(toolCall.function.name, deniedReason)
+        : await options.executeToolCall(toolCall, {
+            config: options.config,
+            signal: options.signal,
+            status: options.status,
+          });
+      if (deniedReason) {
+        options.onEvent?.({ type: "tool_denied", iteration, toolCall, reason: deniedReason });
+      }
       toolResults.push({ toolCall, result });
       options.onEvent?.({ type: "tool_result", iteration, toolCall, result });
 

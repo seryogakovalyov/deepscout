@@ -17,8 +17,34 @@ function toolCallSignature(toolCall) {
         arguments: parseArguments(toolCall.function.arguments),
     });
 }
+const SEARCH_TOOL_NAMES = new Set([
+    "search",
+    "search_recent",
+    "search_news",
+    "deep_search",
+    "research_topic",
+    "fact_check",
+    "verify_statistic",
+    "find_primary_source",
+    "find_expert_views",
+    "search_academic",
+    "compare_sources",
+    "check_source",
+]);
+function isSearchToolCall(toolCall) {
+    return SEARCH_TOOL_NAMES.has(toolCall.function.name);
+}
+function deniedToolResult(toolName, reason) {
+    return JSON.stringify({
+        tool_error: true,
+        tool: toolName,
+        error: reason,
+        hint: "Use the successful tool results already returned in this turn, then decide whether another search is still needed in the next iteration.",
+    }, null, 2);
+}
 async function runToolLoop(options) {
     const maxIterations = options.maxIterations ?? 10;
+    const maxSearchToolCallsPerTurn = options.maxSearchToolCallsPerTurn ?? 1;
     const messages = [...options.messages];
     const calledTools = [];
     const toolResults = [];
@@ -38,6 +64,7 @@ async function runToolLoop(options) {
             completedNormally = true;
             break;
         }
+        let searchToolCallsThisTurn = 0;
         for (const toolCall of toolCalls) {
             const signature = toolCallSignature(toolCall);
             if (seenToolCalls.has(signature)) {
@@ -52,11 +79,22 @@ async function runToolLoop(options) {
                 toolCall,
                 parsedArguments: parseArguments(toolCall.function.arguments),
             });
-            const result = await options.executeToolCall(toolCall, {
-                config: options.config,
-                signal: options.signal,
-                status: options.status,
-            });
+            const searchToolCall = isSearchToolCall(toolCall);
+            if (searchToolCall)
+                searchToolCallsThisTurn += 1;
+            const deniedReason = searchToolCall && searchToolCallsThisTurn > maxSearchToolCallsPerTurn
+                ? `too many search/research tool calls in one assistant turn (${searchToolCallsThisTurn}); limit is ${maxSearchToolCallsPerTurn}`
+                : "";
+            const result = deniedReason
+                ? deniedToolResult(toolCall.function.name, deniedReason)
+                : await options.executeToolCall(toolCall, {
+                    config: options.config,
+                    signal: options.signal,
+                    status: options.status,
+                });
+            if (deniedReason) {
+                options.onEvent?.({ type: "tool_denied", iteration, toolCall, reason: deniedReason });
+            }
             toolResults.push({ toolCall, result });
             options.onEvent?.({ type: "tool_result", iteration, toolCall, result });
             messages.push({

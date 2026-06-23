@@ -5,7 +5,7 @@ const { exportMcpTools, handleMcpRequest } = require("../providers/mcp/server");
 
 test("exportMcpTools maps tools to MCP inputSchema shape", () => {
   const tools = exportMcpTools();
-  assert.equal(tools.length, 14);
+  assert.equal(tools.length, 15);
 
   const search = tools.find((tool) => tool.name === "search");
   assert.ok(search);
@@ -37,7 +37,8 @@ test("handleMcpRequest responds to tools/list", async () => {
   });
 
   assert.equal(response.id, "tools");
-  assert.equal(response.result.tools.length, 14);
+  assert.equal(response.result.tools.length, 15);
+  assert.ok(response.result.tools.some((tool) => tool.name === "get_datetime"));
   assert.ok(response.result.tools.some((tool) => tool.name === "clarify"));
 });
 

@@ -23,6 +23,76 @@ const AMBIGUOUS_TERMS: Record<string, string[]> = {
   crane:    ["construction crane", "bird"],
 };
 
+function currentDateTimePayload(): string {
+  const now = new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localDateTime = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  }).format(now);
+
+  return json({
+    current_date: now.toISOString().slice(0, 10),
+    current_time_iso: now.toISOString(),
+    local_datetime: localDateTime,
+    timezone: timeZone,
+    unix_ms: now.getTime(),
+    current_fact_policy: {
+      date_check_only: true,
+      sufficient_to_answer_current_factual_questions: false,
+      requires_followup_research_for_current_facts: true,
+      recommended_next_tools: ["search_recent", "search_news", "search", "fetch_and_read"],
+    },
+    instruction: [
+      "Use this as the current date/time anchor.",
+      "If the user asks about current, latest, recent, or availability/status facts, do not answer from model memory.",
+      "This date check is not sufficient evidence for claims about what currently exists, what was released, or what happened recently.",
+      "Call search_recent, search_news, search, fetch_and_read, or another appropriate research tool after this date check.",
+      "When answering, state dates explicitly and avoid stale timeline claims.",
+    ].join(" "),
+  });
+}
+
+export function __test_aiModelReleaseQueries(query: string): string[] {
+  const lower = query.toLowerCase();
+  const isAiModelQuery = /\b(ai|llm|model|models|open[- ]?weight|local model|foundation model|release|released|benchmark|instruct|chat model)\b/i.test(lower);
+  if (!isAiModelQuery) return [];
+
+  return [
+    `${query} site:huggingface.co`,
+    `${query} site:github.com`,
+    `${query} site:modelscope.cn`,
+  ];
+}
+
+function credibilityRank(credibility: SourceCredibility): number {
+  if (credibility.credibility === "high") return 0;
+  if (credibility.credibility === "medium") return 1;
+  if (credibility.credibility === "unknown") return 2;
+  return 3;
+}
+
+export function __test_evidenceConfidence(
+  hits: Array<{ credibility: SourceCredibility }>,
+  pages: Array<{ credibility: SourceCredibility; content: string | null }>,
+): "high" | "medium" | "low" {
+  const readablePages = pages.filter((p) => p.content);
+  const highReadable = readablePages.filter((p) => p.credibility.credibility === "high").length;
+  const mediumReadable = readablePages.filter((p) => p.credibility.credibility === "medium").length;
+  const allHitsWeak = hits.length === 0 || hits.every((h) => ["unknown", "low"].includes(h.credibility.credibility));
+
+  if (highReadable >= 2) return "high";
+  if (highReadable >= 1 || mediumReadable >= 1 || !allHitsWeak) return "medium";
+  return "low";
+}
+
 function detectAmbiguitySignals(question: string): string[] {
   const signals: string[] = [];
   const lower = question.toLowerCase();
@@ -40,7 +110,7 @@ function detectAmbiguitySignals(question: string): string[] {
   const hasTimeSensitive = timeWords.some((w) => new RegExp(`\\b${w}\\b`).test(lower));
   const hasTimeContext = /\b(20\d{2}|last (week|month|year)|in \d{4})\b/i.test(question);
   if (hasTimeSensitive && !hasTimeContext) {
-    signals.push("time-sensitive terms detected — which time period matters?");
+    signals.push("time-sensitive terms detected — use get_datetime, then search_recent/search_news/search before answering");
   }
 
   // "here" omitted — too common a false positive ("here is how it works")
@@ -64,6 +134,10 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
     searchAndRead(query, max, pages, config.timeoutMs, time, config.locale, dedup, config.searxngUrl, config.embeddingsUrl, signal, status, searxngRetry);
 
   return {
+    get_datetime: async () => {
+      return currentDateTimePayload();
+    },
+
     clarify: async ({ question }, ctx) => {
       ctx.status("Analysing query…");
       const signals = detectAmbiguitySignals(question);
@@ -348,29 +422,76 @@ export function createToolHandlers(config: SearchConfig): ToolHandlers {
     search_recent: async ({ query, window, read_pages }, ctx) => {
       ctx.status(`Searching (last ${window}): ${query}`);
       const timeMap = { day: "d", week: "w", month: "m", year: "y" } as const;
-      const { hits, pages } = await sar(query, config.maxResults, read_pages, timeMap[window], undefined, ctx.signal, ctx.status);
+      const time = timeMap[window];
+      const queries = [query, ...__test_aiModelReleaseQueries(query)];
+      const allHits: SearchHit[] = [];
+      const seenUrls = new Set<string>();
 
-      const successUrls = pages.filter((p) => !p.error).map((p) => p.url);
+      for (const [i, q] of queries.entries()) {
+        ctx.status(i === 0 ? `Recent search: ${q}` : `Official-source search: ${q}`);
+        const hits = await ddg(q, config.maxResults, time, ctx.signal, ctx.status);
+        for (const h of hits) {
+          if (!seenUrls.has(h.url)) {
+            seenUrls.add(h.url);
+            allHits.push(h);
+          }
+        }
+        await sleep(350);
+      }
+
+      const rankedHits = allHits
+        .map((h, index) => ({ ...h, index, credibility: assessDomainCredibility(h.url) }))
+        .sort((a, b) => credibilityRank(a.credibility) - credibilityRank(b.credibility) || a.index - b.index);
+
+      const pages: Array<{
+        url: string;
+        title: string;
+        credibility: SourceCredibility;
+        content: string | null;
+        error?: string;
+      }> = [];
+
+      for (const h of rankedHits) {
+        if (ctx.signal.aborted) break;
+        if (pages.filter((p) => p.content).length >= read_pages) break;
+        if (pages.length >= Math.max(read_pages * 3, read_pages)) break;
+        ctx.status(`Reading recent source: ${h.title.slice(0, 60)}`);
+        const p = await fetchPage(h.url, config.timeoutMs, 8000, ctx.signal);
+        pages.push({
+          url: h.url,
+          title: p.title || h.title,
+          credibility: h.credibility,
+          content: p.error ? null : p.text,
+          ...(p.error ? { error: p.error } : {}),
+        });
+        await sleep(300);
+      }
+
+      const successUrls = pages.filter((p) => p.content).map((p) => p.url);
+      const confidence = __test_evidenceConfidence(rankedHits, pages);
+      const lowConfidenceInstruction = confidence === "low"
+        ? " Evidence confidence is LOW because all available sources are unknown/low credibility or unreadable. Do not make definitive claims; label conclusions as unverified and prefer saying what could not be confirmed."
+        : "";
 
       return json({
         query,
         window,
-        results_found: hits.length,
+        official_source_strategy: {
+          enabled: queries.length > 1,
+          queries_used: queries.slice(1),
+        },
+        results_found: rankedHits.length,
+        high_credibility_count: rankedHits.filter((h) => h.credibility.credibility === "high").length,
+        confidence,
         independent_publishers_read: new Set(successUrls.map(rootDomain)).size,
-        results: hits.map((h) => ({
+        results: rankedHits.map((h) => ({
           title: h.title,
           url: h.url,
           snippet: h.snippet,
-          credibility: assessDomainCredibility(h.url),
+          credibility: h.credibility,
         })),
-        pages_read: pages.map((p) => ({
-          url: p.url,
-          title: p.title,
-          credibility: assessDomainCredibility(p.url),
-          content: p.error ? null : p.text,
-          ...(p.error ? { error: p.error } : {}),
-        })),
-        instruction: publisherDiversityInstruction(successUrls) + " Focus on what is NEW here. Note publication dates when visible in the content. Flag if results are actually older than the requested window.",
+        pages_read: pages,
+        instruction: publisherDiversityInstruction(successUrls) + " Focus on what is NEW here. Note publication dates when visible in the content. Flag if results are actually older than the requested window." + lowConfidenceInstruction,
       });
     },
 

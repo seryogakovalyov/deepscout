@@ -139,3 +139,39 @@ test("runToolLoop emits tool call and result events", async () => {
   assert.equal(result.completedNormally, true);
   assert.deepEqual(events, ["assistant_message", "tool_call", "tool_result", "assistant_message"]);
 });
+
+test("runToolLoop limits search tool fan-out per assistant turn", async () => {
+  const executed = [];
+  const events = [];
+  const result = await runToolLoop({
+    messages: [{ role: "user", content: "research current models" }],
+    tools,
+    chat: async (messages) => {
+      if (messages.some((message) => message.role === "tool")) {
+        return { role: "assistant", content: "done" };
+      }
+      return {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          toolCall("search_recent", { query: "open weight models" }, "search-1"),
+          toolCall("search", { query: "model releases" }, "search-2"),
+          toolCall("search_news", { query: "AI model news" }, "search-3"),
+        ],
+      };
+    },
+    executeToolCall: async (call) => {
+      executed.push(call.function.name);
+      return JSON.stringify({ ok: true, tool: call.function.name });
+    },
+    onEvent: (event) => events.push(event.type),
+  });
+
+  assert.equal(result.completedNormally, true);
+  assert.deepEqual(executed, ["search_recent"]);
+  assert.deepEqual(result.calledTools, ["search_recent", "search", "search_news"]);
+  assert.equal(result.toolResults.length, 3);
+  assert.equal(JSON.parse(result.toolResults[1].result).tool_error, true);
+  assert.match(JSON.parse(result.toolResults[1].result).error, /too many search\/research tool calls/);
+  assert.equal(events.filter((event) => event === "tool_denied").length, 2);
+});
